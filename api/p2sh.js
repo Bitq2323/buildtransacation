@@ -2,25 +2,23 @@ const axios = require('axios');
 const bitcoin = require('bitcoinjs-lib');
 
 module.exports = async (req, res) => {
-  console.log('Request Body:', req.body);
-  // Assuming parameters are provided in the request body for a POST request
+  console.log('Received Request Body:', JSON.stringify(req.body, null, 2));
+
   const {
     amountToSend, changeAddress, recipientAddress, utxosString,
     RBF, isBroadcast, transactionFee
   } = req.body;
 
-  const network = bitcoin.networks.bitcoin; // Adjust for testnet or bitcoin as necessary
+  const network = bitcoin.networks.bitcoin;
   const isBroadcastBool = isBroadcast === 'true' || isBroadcast === true;
   const RBFBool = RBF === 'true' || RBF === true;
 
-  // Parse UTXOs string
   const utxos = utxosString.split("|").map(utxoString => {
     const utxoParts = utxoString.split(", ").reduce((acc, part) => {
       const [key, value] = part.split(":");
       acc[key] = key === 'vout' || key === 'value' ? parseInt(value, 10) : value;
       return acc;
     }, {});
-
     return {
       txid: utxoParts.txid,
       vout: utxoParts.vout,
@@ -29,36 +27,40 @@ module.exports = async (req, res) => {
     };
   });
 
-  // Function to fetch raw transaction data
+  console.log('Parsed UTXOs:', JSON.stringify(utxos, null, 2));
+
   async function fetchRawTransaction(txId) {
     try {
       const response = await axios.get(`https://blockchain.info/rawtx/${txId}?format=hex`);
       return response.data;
     } catch (error) {
       console.error('Error fetching raw transaction:', error);
-      throw new Error('Error fetching raw transaction');
+      throw new Error('Error fetching raw transaction: ' + error.message);
     }
   }
 
-  // Function to broadcast the transaction
   async function broadcastTransaction(txHex) {
     try {
       const response = await axios.post('https://mempool.space/api/tx', txHex, {
         headers: { 'Content-Type': 'text/plain' }
       });
-      return response.data; // Adjust based on API response format
+      return response.data;
     } catch (error) {
       console.error('Error broadcasting transaction:', error);
-      throw new Error('Error broadcasting transaction');
+      throw new Error('Error broadcasting transaction: ' + error.message);
     }
   }
 
-  // Main function to create and optionally broadcast PSBT
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
     let totalInputValue = 0;
 
     for (const utxo of utxos) {
+      if (!utxo.txid) {
+        console.error('Undefined txid in UTXOs:', JSON.stringify(utxo));
+        throw new Error('Undefined txid in UTXOs, check your input format.');
+      }
+
       const rawTx = await fetchRawTransaction(utxo.txid);
       const keyPair = bitcoin.ECPair.fromWIF(utxo.wif, network);
       const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
@@ -86,7 +88,7 @@ module.exports = async (req, res) => {
     });
 
     const change = totalInputValue - totalAmountNeeded;
-    if (change > 546) { // Ensuring change is above dust threshold
+    if (change > 546) {
       psbt.addOutput({
         address: changeAddress,
         value: change,
@@ -104,20 +106,19 @@ module.exports = async (req, res) => {
     const txHex = tx.toHex();
 
     if (isBroadcastBool) {
-      return await broadcastTransaction(txHex);
+      const broadcastResult = await broadcastTransaction(txHex);
+      return { txid: broadcastResult.txid };
     } else {
-      return {
-        hex: txHex,
-        virtualSize: tx.virtualSize(),
-      };
+      return { hex: txHex, virtualSize: tx.virtualSize() };
     }
   }
 
-  // Execute the PSBT creation and handle the response
   try {
     const result = await createPsbt();
+    console.log('PSBT Result:', result);
     res.status(200).json(result);
   } catch (error) {
+    console.error('Error in createPsbt:', error);
     res.status(500).json({ error: error.message });
   }
 };
