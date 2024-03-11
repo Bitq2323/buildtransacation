@@ -2,6 +2,7 @@ const axios = require('axios');
 const bitcoin = require('bitcoinjs-lib');
 
 module.exports = async (req, res) => {
+  console.log('Request Body:', req.body);
   // Assuming parameters are provided in the request body for a POST request
   const {
     amountToSend, changeAddress, recipientAddress, utxosString,
