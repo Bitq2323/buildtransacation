@@ -14,18 +14,15 @@ module.exports = async (req, res) => {
   const RBFBool = RBF === 'true' || RBF === true;
 
   const utxos = utxosString.split("|").map(utxoString => {
-    const utxoParts = utxoString.split(", ").reduce((acc, part) => {
-      const [key, value] = part.split(":");
-      acc[key] = key === 'vout' || key === 'value' ? parseInt(value, 10) : value;
-      return acc;
-    }, {});
+    const parts = utxoString.split(","); // Split by comma first to separate txid:vout, value, and wif
+    const txidVout = parts[0].split(":"); // Further split the first part to separate txid and vout
     return {
-      txid: utxoParts.txid,
-      vout: utxoParts.vout,
-      value: utxoParts.value,
-      wif: utxoParts.wif
+      txid: txidVout[0],
+      vout: parseInt(txidVout[1], 10),
+      value: parseInt(parts[1], 10),
+      wif: parts[2]
     };
-  });
+});
 
   console.log('Parsed UTXOs:', JSON.stringify(utxos, null, 2));
 
