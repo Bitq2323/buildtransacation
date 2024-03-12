@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
       value: parseInt(parts[1], 10),
       wif: parts[2]
     };
-});
+  });
 
   console.log('Parsed UTXOs:', JSON.stringify(utxos, null, 2));
 
@@ -74,17 +74,25 @@ module.exports = async (req, res) => {
       totalInputValue += utxo.value;
     }
 
-    const totalAmountNeeded = parseInt(amountToSend) + parseInt(transactionFee);
+    let actualAmountToSend = parseInt(amountToSend);
+    const requestedFee = parseInt(transactionFee);
+    const totalAmountNeeded = actualAmountToSend + requestedFee;
+
     if (totalInputValue < totalAmountNeeded) {
-      throw new Error('Insufficient funds for transaction and fee');
+      const availableForSending = totalInputValue - requestedFee;
+      if (availableForSending > 0) {
+        actualAmountToSend = availableForSending;
+      } else {
+        throw new Error('Insufficient funds to cover the fee');
+      }
     }
 
     psbt.addOutput({
       address: recipientAddress,
-      value: parseInt(amountToSend),
+      value: actualAmountToSend,
     });
 
-    const change = totalInputValue - totalAmountNeeded;
+    const change = totalInputValue - actualAmountToSend - requestedFee;
     if (change > 546) {
       psbt.addOutput({
         address: changeAddress,
