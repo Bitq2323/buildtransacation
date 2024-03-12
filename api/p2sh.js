@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
       totalAmountToSend = totalInputValue - requestedFee;
       amountsToSend = proportions.map(prop => Math.floor(totalAmountToSend * prop));
     }
-
+// hello
     // Adjust for exact fee deduction if total balance is used
     let totalAmountAfterFee = totalAmountToSend - requestedFee;
     if (totalAmountAfterFee < 0) {
