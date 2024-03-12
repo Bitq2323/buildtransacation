@@ -5,8 +5,8 @@ module.exports = async (req, res) => {
   console.log('Received Request Body:', JSON.stringify(req.body, null, 2));
 
   const {
-    amountToSend, changeAddress, recipientAddress, utxosString,
-    RBF, isBroadcast, transactionFee
+      amountToSend, changeAddress, recipientAddress, utxosString,
+      RBF, isBroadcast, transactionFee
   } = req.body;
 
   const network = bitcoin.networks.bitcoin;
@@ -14,15 +14,15 @@ module.exports = async (req, res) => {
   const RBFBool = RBF === 'true' || RBF === true;
 
   const utxos = utxosString.split("|").map(utxoString => {
-    const parts = utxoString.split(","); // Split by comma first to separate txid:vout, value, and wif
-    const txidVout = parts[0].split(":"); // Further split the first part to separate txid and vout
-    return {
-      txid: txidVout[0],
-      vout: parseInt(txidVout[1], 10),
-      value: parseInt(parts[1], 10),
-      wif: parts[2]
-    };
-});
+      const parts = utxoString.split(","); 
+      const txidVout = parts[0].split(":");
+      return {
+          txid: txidVout[0],
+          vout: parseInt(txidVout[1], 10),
+          value: parseInt(parts[1], 10),
+          wif: parts[2]
+      };
+  });
 
   console.log('Parsed UTXOs:', JSON.stringify(utxos, null, 2));
 
@@ -123,11 +123,11 @@ module.exports = async (req, res) => {
 }
 
 try {
-    const result = await createPsbt();
-    console.log('PSBT Result:', result);
-    res.status(200).json(result); // This should now correctly contain the expected result
+  const result = await createPsbt();
+  console.log('PSBT Result:', result);
+  res.status(200).json(result);
 } catch (error) {
-    console.error('Error in createPsbt:', error);
-    res.status(500).json({ error: error.message });
+  console.error('Error in createPsbt:', error);
+  res.status(500).json({ error: error.message });
 }
-}
+};
