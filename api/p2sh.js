@@ -52,10 +52,10 @@ module.exports = async (req, res) => {
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
     let totalInputValue = utxos.reduce((sum, utxo) => sum + utxo.value, 0);
-    const recipientAddresses = recipientAddress.split(",");
-    const amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
+    let recipientAddresses = recipientAddress.split(",");
+    let amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
     let totalAmountToSend = amountsToSend.reduce((sum, amount) => sum + amount, 0);
-    const requestedFee = parseInt(transactionFee);
+    let requestedFee = parseInt(transactionFee);
     let proportions = amountsToSend.map(amount => amount / totalAmountToSend);
 
     if (totalAmountToSend + requestedFee > totalInputValue) {
@@ -87,7 +87,7 @@ module.exports = async (req, res) => {
 
     // Add outputs
     recipientAddresses.forEach((address, index) => {
-      const amount = amountsToSend[index];
+      let amount = amountsToSend[index];
       if (amount) {
         psbt.addOutput({
           address: address,
@@ -97,8 +97,8 @@ module.exports = async (req, res) => {
     });
 
     // Check if there's need for change output
-    const totalOutputValue = amountsToSend.reduce((acc, amount) => acc + amount, 0) + requestedFee;
-    const change = totalInputValue - totalOutputValue;
+    let totalOutputValue = amountsToSend.reduce((acc, amount) => acc + amount, 0) + requestedFee;
+    let change = totalInputValue - totalOutputValue;
     if (change > 546) { // Dust threshold
         psbt.addOutput({
             address: changeAddress,
