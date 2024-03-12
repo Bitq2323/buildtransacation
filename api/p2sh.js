@@ -112,12 +112,12 @@ module.exports = async (req, res) => {
     const txHex = tx.toHex();
 
     if (isBroadcastBool) {
-      const broadcastResult = await broadcastTransaction(txHex);
-      return { txid: broadcastResult.txid };
+      const txid = await broadcastTransaction(txHex); // This directly returns the txID as a string
+      return { txid: txid }; // Use the txID directly
     } else {
       return { hex: txHex, virtualSize: tx.virtualSize() };
     }
-  }
+      }
 
   try {
     const result = await createPsbt();
