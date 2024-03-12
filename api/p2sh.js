@@ -109,21 +109,25 @@ module.exports = async (req, res) => {
     const tx = psbt.extractTransaction();
     const txHex = tx.toHex();
 
-    // Handle broadcasting or return the transaction hex
+    let result;
+
     if (isBroadcastBool) {
         const broadcastResult = await broadcastTransaction(txHex);
-        return { txid: broadcastResult.txid };
+        console.log('Transaction broadcasted, txID:', broadcastResult.txid);
+        result = { txid: broadcastResult.txid }; // Ensure you are capturing the broadcast result correctly
     } else {
-        return { hex: txHex, virtualSize: tx.virtualSize() };
+        console.log('Transaction prepared but not broadcasted.');
+        result = { hex: txHex, virtualSize: tx.virtualSize() };
     }
+    return result; // Make sure to return the result here
 }
 
-  try {
+try {
     const result = await createPsbt();
     console.log('PSBT Result:', result);
-    res.status(200).json(result);
-  } catch (error) {
+    res.status(200).json(result); // This should now correctly contain the expected result
+} catch (error) {
     console.error('Error in createPsbt:', error);
     res.status(500).json({ error: error.message });
-  }
-};
+}
+}
