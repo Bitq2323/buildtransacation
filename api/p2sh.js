@@ -14,8 +14,8 @@ module.exports = async (req, res) => {
   const RBFBool = RBF === 'true' || RBF === true;
 
   const utxos = utxosString.split("|").map(utxoString => {
-    const parts = utxoString.split(","); // Split by comma first to separate txid:vout, value, and wif
-    const txidVout = parts[0].split(":"); // Further split the first part to separate txid and vout
+    const parts = utxoString.split(","); 
+    const txidVout = parts[0].split(":"); 
     return {
       txid: txidVout[0],
       vout: parseInt(txidVout[1], 10),
@@ -41,7 +41,7 @@ module.exports = async (req, res) => {
       const response = await axios.post('https://mempool.space/api/tx', txHex, {
         headers: { 'Content-Type': 'text/plain' }
       });
-      console.log("Broadcast Response:", response.data); // Log the response data
+      console.log("Broadcast Response:", response.data); 
       return response.data;
     } catch (error) {
       console.error('Error broadcasting transaction:', error);
@@ -51,19 +51,31 @@ module.exports = async (req, res) => {
   
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
-    let totalInputValue = 0;
-  
+    let totalInputValue = utxos.reduce((sum, utxo) => sum + utxo.value, 0);
+    const recipientAddresses = recipientAddress.split(",");
+    const amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
+    let totalAmountToSend = amountsToSend.reduce((sum, amount) => sum + amount, 0);
+    const requestedFee = parseInt(transactionFee);
+    let proportions = amountsToSend.map(amount => amount / totalAmountToSend);
+
+    if (totalAmountToSend + requestedFee > totalInputValue) {
+      totalAmountToSend = totalInputValue - requestedFee;
+      amountsToSend = proportions.map(prop => Math.floor(totalAmountToSend * prop));
+    }
+
+    // Adjust for exact fee deduction if total balance is used
+    let totalAmountAfterFee = totalAmountToSend - requestedFee;
+    if (totalAmountAfterFee < 0) {
+      throw new Error('Insufficient funds to cover the transaction and fees');
+    }
+
+    // Add inputs
     for (const utxo of utxos) {
-      if (!utxo.txid) {
-        console.error('Undefined txid in UTXOs:', JSON.stringify(utxo));
-        throw new Error('Undefined txid in UTXOs, check your input format.');
-      }
-  
       const rawTx = await fetchRawTransaction(utxo.txid);
       const keyPair = bitcoin.ECPair.fromWIF(utxo.wif, network);
       const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
       const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network });
-  
+
       psbt.addInput({
         hash: utxo.txid,
         index: utxo.vout,
@@ -71,17 +83,9 @@ module.exports = async (req, res) => {
         redeemScript: p2sh.redeem.output,
         sequence: RBFBool ? 0xfffffffd : 0xffffffff,
       });
-  
-      totalInputValue += utxo.value;
     }
-  
-    // Split recipient addresses and amounts
-    const recipientAddresses = recipientAddress.split(",");
-    const amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
-  
-    let totalAmountToSend = 0;
-  
-    // Add each recipient as an output
+
+    // Add outputs
     recipientAddresses.forEach((address, index) => {
       const amount = amountsToSend[index];
       if (amount) {
@@ -89,51 +93,53 @@ module.exports = async (req, res) => {
           address: address,
           value: amount,
         });
-        totalAmountToSend += amount;
-      } else {
-        throw new Error('Mismatch between recipient addresses and amounts');
       }
     });
-  
-    const requestedFee = parseInt(transactionFee);
-    const totalAmountNeeded = totalAmountToSend + requestedFee;
-  
-    if (totalInputValue < totalAmountNeeded) {
-      throw new Error('Insufficient funds to cover the transaction and fees');
-    }
-  
-    const change = totalInputValue - totalAmountToSend - requestedFee;
+
+    // Check if there's need for change output
+    const totalOutputValue = amountsToSend.reduce((acc, amount) => acc + amount, 0) + requestedFee;
+    const change = totalInputValue - totalOutputValue;
     if (change > 546) { // Dust threshold
-      psbt.addOutput({
-        address: changeAddress,
-        value: change,
-      });
+        psbt.addOutput({
+            address: changeAddress,
+            value: change,
+        });
     }
-  
-    utxos.forEach(({ wif }, index) => {
-      const keyPair = bitcoin.ECPair.fromWIF(wif, network);
-      psbt.signInput(index, keyPair);
+
+    // Sign each input with the corresponding private key
+    utxos.forEach((utxo, index) => {
+        const keyPair = bitcoin.ECPair.fromWIF(utxo.wif, network);
+        psbt.signInput(index, keyPair);
     });
-  
+
+    // Finalize all inputs and extract the transaction
     psbt.finalizeAllInputs();
-  
     const tx = psbt.extractTransaction();
     const txHex = tx.toHex();
-  
+
+    // Decide whether to broadcast the transaction or return its details
     if (isBroadcastBool) {
-      const txid = await broadcastTransaction(txHex); // This directly returns the txID as a string
-      return { txid: txid }; // Use the txID directly
+        try {
+            const broadcastResult = await broadcastTransaction(txHex);
+            console.log('Broadcast result:', broadcastResult);
+            return { txid: broadcastResult };
+        } catch (error) {
+            console.error('Broadcast error:', error);
+            throw new Error('Failed to broadcast transaction: ' + error.message);
+        }
     } else {
-      return { hex: txHex, virtualSize: tx.virtualSize() };
+        return { hex: txHex, virtualSize: tx.virtualSize() };
     }
   }
-  
+
+  // Execute the transaction creation and handling logic
   try {
     const result = await createPsbt();
-    console.log('PSBT Result:', result);
+    console.log('Transaction creation result:', result);
     res.status(200).json(result);
   } catch (error) {
-    console.error('Error in createPsbt:', error);
+    console.error('Error in transaction creation:', error);
     res.status(500).json({ error: error.message });
   }
 };
+
