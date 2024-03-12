@@ -2,27 +2,27 @@ const axios = require('axios');
 const bitcoin = require('bitcoinjs-lib');
 
 module.exports = async (req, res) => {
-  console.log('Received Request Body:', JSON.stringify(req.body, null, 2));
+    console.log('Received Request Body:', JSON.stringify(req.body, null, 2));
 
-  const {
-      amountToSend, changeAddress, recipientAddress, utxosString,
-      RBF, isBroadcast, transactionFee
-  } = req.body;
+    const {
+        amountToSend, changeAddress, recipientAddress, utxosString,
+        RBF, isBroadcast, transactionFee
+    } = req.body;
 
-  const network = bitcoin.networks.bitcoin;
-  const isBroadcastBool = isBroadcast === 'true' || isBroadcast === true;
-  const RBFBool = RBF === 'true' || RBF === true;
+    const network = bitcoin.networks.bitcoin;
+    const isBroadcastBool = isBroadcast === 'true';
+    const RBFBool = RBF === 'true';
 
-  const utxos = utxosString.split("|").map(utxoString => {
-      const parts = utxoString.split(","); 
-      const txidVout = parts[0].split(":");
-      return {
-          txid: txidVout[0],
-          vout: parseInt(txidVout[1], 10),
-          value: parseInt(parts[1], 10),
-          wif: parts[2]
-      };
-  });
+    const utxos = utxosString.split("|").map(utxoString => {
+        const [txidAndVout, value, wif] = utxoString.split(",");
+        const [txid, vout] = txidAndVout.split(":");
+        return {
+            txid,
+            vout: parseInt(vout, 10),
+            value: parseInt(value, 10),
+            wif
+        };
+    });
 
   console.log('Parsed UTXOs:', JSON.stringify(utxos, null, 2));
 
@@ -38,15 +38,20 @@ module.exports = async (req, res) => {
 
   async function broadcastTransaction(txHex) {
     try {
-      const response = await axios.post('https://mempool.space/api/tx', txHex, {
-        headers: { 'Content-Type': 'text/plain' }
-      });
-      return response.data;
+        const response = await axios.post('https://mempool.space/api/tx', txHex, {
+            headers: { 'Content-Type': 'text/plain' }
+        });
+        console.log('Broadcast response:', response.data);
+        if (response.data && response.data.txid) {
+            return response.data.txid;
+        } else {
+            throw new Error('Broadcast succeeded but did not return a txid.');
+        }
     } catch (error) {
-      console.error('Error broadcasting transaction:', error);
-      throw new Error('Error broadcasting transaction: ' + error.message);
+        console.error('Error broadcasting transaction:', error);
+        throw new Error('Error broadcasting transaction: ' + error.message);
     }
-  }
+}
 
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
@@ -112,14 +117,13 @@ module.exports = async (req, res) => {
     let result;
 
     if (isBroadcastBool) {
-        const broadcastResult = await broadcastTransaction(txHex);
-        console.log('Transaction broadcasted, txID:', broadcastResult.txid);
-        result = { txid: broadcastResult.txid }; // Ensure you are capturing the broadcast result correctly
-    } else {
-        console.log('Transaction prepared but not broadcasted.');
-        result = { hex: txHex, virtualSize: tx.virtualSize() };
-    }
-    return result; // Make sure to return the result here
+      const txid = await broadcastTransaction(txHex);
+      console.log('Transaction broadcasted, txID:', txid);
+      return { txid };
+  } else {
+      console.log('Transaction prepared but not broadcasted.');
+      return { hex: txHex, virtualSize: tx.virtualSize() };
+  }
 }
 
 try {
