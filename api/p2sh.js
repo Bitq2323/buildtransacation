@@ -52,18 +52,18 @@ module.exports = async (req, res) => {
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
     let totalInputValue = 0;
-
+  
     for (const utxo of utxos) {
       if (!utxo.txid) {
         console.error('Undefined txid in UTXOs:', JSON.stringify(utxo));
         throw new Error('Undefined txid in UTXOs, check your input format.');
       }
-
+  
       const rawTx = await fetchRawTransaction(utxo.txid);
       const keyPair = bitcoin.ECPair.fromWIF(utxo.wif, network);
       const p2wpkh = bitcoin.payments.p2wpkh({ pubkey: keyPair.publicKey, network });
       const p2sh = bitcoin.payments.p2sh({ redeem: p2wpkh, network });
-
+  
       psbt.addInput({
         hash: utxo.txid,
         index: utxo.vout,
@@ -71,54 +71,63 @@ module.exports = async (req, res) => {
         redeemScript: p2sh.redeem.output,
         sequence: RBFBool ? 0xfffffffd : 0xffffffff,
       });
-
+  
       totalInputValue += utxo.value;
     }
-
-    let actualAmountToSend = parseInt(amountToSend);
-    const requestedFee = parseInt(transactionFee);
-    const totalAmountNeeded = actualAmountToSend + requestedFee;
-
-    if (totalInputValue < totalAmountNeeded) {
-      const availableForSending = totalInputValue - requestedFee;
-      if (availableForSending > 0) {
-        actualAmountToSend = availableForSending;
+  
+    // Split recipient addresses and amounts
+    const recipientAddresses = recipientAddress.split(",");
+    const amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
+  
+    let totalAmountToSend = 0;
+  
+    // Add each recipient as an output
+    recipientAddresses.forEach((address, index) => {
+      const amount = amountsToSend[index];
+      if (amount) {
+        psbt.addOutput({
+          address: address,
+          value: amount,
+        });
+        totalAmountToSend += amount;
       } else {
-        throw new Error('Insufficient funds to cover the fee');
+        throw new Error('Mismatch between recipient addresses and amounts');
       }
-    }
-
-    psbt.addOutput({
-      address: recipientAddress,
-      value: actualAmountToSend,
     });
-
-    const change = totalInputValue - actualAmountToSend - requestedFee;
-    if (change > 546) {
+  
+    const requestedFee = parseInt(transactionFee);
+    const totalAmountNeeded = totalAmountToSend + requestedFee;
+  
+    if (totalInputValue < totalAmountNeeded) {
+      throw new Error('Insufficient funds to cover the transaction and fees');
+    }
+  
+    const change = totalInputValue - totalAmountToSend - requestedFee;
+    if (change > 546) { // Dust threshold
       psbt.addOutput({
         address: changeAddress,
         value: change,
       });
     }
-
+  
     utxos.forEach(({ wif }, index) => {
       const keyPair = bitcoin.ECPair.fromWIF(wif, network);
       psbt.signInput(index, keyPair);
     });
-
+  
     psbt.finalizeAllInputs();
-
+  
     const tx = psbt.extractTransaction();
     const txHex = tx.toHex();
-
+  
     if (isBroadcastBool) {
       const txid = await broadcastTransaction(txHex); // This directly returns the txID as a string
       return { txid: txid }; // Use the txID directly
     } else {
       return { hex: txHex, virtualSize: tx.virtualSize() };
     }
-      }
-
+  }
+  
   try {
     const result = await createPsbt();
     console.log('PSBT Result:', result);
