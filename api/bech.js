@@ -52,16 +52,21 @@ module.exports = async (req, res) => {
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
     let totalInputValue = utxos.reduce((sum, utxo) => sum + utxo.value, 0);
-
+    let requestedFee = parseInt(transactionFee);
+  
     let recipientAddresses = recipientAddress.split(",");
     let amountsToSend = amountToSend.split(",").map(amount => parseInt(amount));
     let totalAmountToSend = amountsToSend.reduce((sum, amount) => sum + amount, 0);
-    let requestedFee = parseInt(transactionFee);
-
+  
+    // Adjust the sending amount if total funds (minus fees) are insufficient
     if (totalAmountToSend + requestedFee > totalInputValue) {
-      throw new Error('Insufficient funds for transaction and fees');
+      // Use the whole balance minus the fee for sending
+      totalAmountToSend = totalInputValue - requestedFee;
+      // Adjust the amounts to send if there are multiple recipients, proportionally
+      let totalRequestedAmount = amountsToSend.reduce((sum, amount) => sum + amount, 0);
+      amountsToSend = amountsToSend.map(amount => Math.floor((amount / totalRequestedAmount) * totalAmountToSend));
     }
-
+  
     // Add inputs for P2WPKH
     for (const utxo of utxos) {
       const rawTx = await fetchRawTransaction(utxo.txid);
