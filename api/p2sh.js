@@ -41,13 +41,14 @@ module.exports = async (req, res) => {
       const response = await axios.post('https://mempool.space/api/tx', txHex, {
         headers: { 'Content-Type': 'text/plain' }
       });
+      console.log("Broadcast Response:", response.data); // Log the response data
       return response.data;
     } catch (error) {
       console.error('Error broadcasting transaction:', error);
       throw new Error('Error broadcasting transaction: ' + error.message);
     }
   }
-
+  
   async function createPsbt() {
     let psbt = new bitcoin.Psbt({ network: network });
     let totalInputValue = 0;
